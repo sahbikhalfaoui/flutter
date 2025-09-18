@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'HomePage.dart';
+import 'AdminPage.dart';
 import 'services/api_service.dart';
 import 'models/user.dart';
+
 class LoginPage extends StatelessWidget {
   
  LoginPage({super.key});
@@ -78,6 +80,14 @@ final TextEditingController _motDePasseController = TextEditingController();
   ),
 ),
 
+            const SizedBox(height: 10),
+
+            // Password
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text("Votre mot de passe *"),
+            ),
+            const SizedBox(height: 5),
 TextField(
   controller: _motDePasseController,
   obscureText: true,
@@ -156,10 +166,23 @@ TextField(
     
     if (response['token'] != null) {
       await ApiService.setToken(response['token']);
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => HomePage()),
-      );
+      
+      // Check user role and navigate accordingly
+      final userRole = response['user']['role'];
+      
+      if (userRole == 'hr') {
+        // Navigate to AdminPage for HR users
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const AdminPage()),
+        );
+      } else {
+        // Navigate to HomePage for managers and employees
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const HomePage()),
+        );
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(response['message'] ?? 'Erreur de connexion')),
@@ -172,10 +195,42 @@ TextField(
   }
 },
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey[300],
-                  foregroundColor: Colors.black,
+                  backgroundColor: const Color(0xFF8E44AD),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
-                child: const Text("Me connecter"),
+                child: const Text(
+                  "Me connecter",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 20),
+
+            // Demo credentials info
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Comptes de démonstration:",
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text("👨‍💼 HR Admin: admin / admin123"),
+                  const Text("👨‍💻 Manager: manager1 / manager123"),
+                  const Text("👩‍💻 Employé: emp1 / emp123"),
+                ],
               ),
             ),
           ],

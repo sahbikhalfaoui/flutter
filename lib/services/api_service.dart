@@ -140,4 +140,53 @@ class ApiService {
     );
     return json.decode(response.body);
   }
+
+  // New methods for Admin functionality
+  static Future<List<dynamic>> getUsers() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/users'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> createUser(Map<String, dynamic> userData) async {
+    final token = await getToken();
+    final response = await http.post(
+      Uri.parse('$baseUrl/users'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+      body: json.encode(userData),
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> updateUser(String id, Map<String, dynamic> userData) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$baseUrl/users/$id'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+      body: json.encode(userData),
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> deleteUser(String id) async {
+    final token = await getToken();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/users/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> answerQuestion(String id, String answer) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$baseUrl/questions-rh/$id/repondre'),
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
+      body: json.encode({'reponse': answer}),
+    );
+    return json.decode(response.body);
+  }
 }

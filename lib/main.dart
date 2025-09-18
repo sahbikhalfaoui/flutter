@@ -5,6 +5,7 @@ import 'LoginPage.dart';
 import 'CalendarPage.dart';
 import 'ProfilePage.dart';
 import 'FolderPage.dart';
+import 'AdminPage.dart';
 // import 'package:flutter_localizations/flutter_localizations.dart';
 
 void main() {
@@ -31,6 +32,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) =>  LoginPage(),
         '/homepage': (context) => const HomePage(),
         '/profile': (context) => ProfilePage(),
+         '/admin': (context) => const AdminPage(),
         '/folder': (context) => const Folderpage(),
         '/calendar': (context) => const Calendarpage(),
       },
