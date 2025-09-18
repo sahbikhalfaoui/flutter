@@ -5,16 +5,18 @@ import 'TaskGroup/QuestionsRH.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'ProfilePage.dart';
+import 'services/api_service.dart';
+import 'models/user.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
+  
   @override
   _HomePageState createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
- 
+ User? currentUser;
   final TextEditingController _searchController = TextEditingController();
   int _selectedIndex = 0; // Track the currently selected index for the bottom nav
   List<TaskGroup> allTaskGroups = [
@@ -43,11 +45,22 @@ class _HomePageState extends State<HomePage> {
   List<TaskGroup> filteredTaskGroups = [];
 
   @override
-  void initState() {
-    super.initState();
-    filteredTaskGroups = allTaskGroups;
-  }
+void initState() {
+  super.initState();
+  filteredTaskGroups = allTaskGroups;
+  _loadUserProfile();
+}
 
+void _loadUserProfile() async {
+  try {
+    final response = await ApiService.getProfile();
+    setState(() {
+      currentUser = User.fromJson(response);
+    });
+  } catch (e) {
+    print('Error loading profile: $e');
+  }
+}
   void _filterTasks(String query) {
     setState(() {
       filteredTaskGroups = allTaskGroups.where((taskGroup) =>
@@ -86,21 +99,27 @@ class _HomePageState extends State<HomePage> {
                     GestureDetector(
                    onTap: () {},
                    child: TaskCard(
-                  title: "Mon solde de congés",
-                   subtitle: "3J/3J",
-                bgGradient: LinearGradient(
-                   colors: [Color(0xFF8E44AD), Color.fromARGB(255, 191, 97, 228)],
-                   begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    ),
-                  progressColor: Colors.white,
-                  ),
+  title: "Mon solde de congés",
+  subtitle: currentUser != null ? "${currentUser!.soldeConges}J/25J" : "Chargement...",
+  bgGradient: LinearGradient(
+    colors: [Color(0xFF8E44AD), Color.fromARGB(255, 191, 97, 228)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  ),
+  progressColor: Colors.white,
+),
+
                    ),
                   
 
                     GestureDetector(
                       onTap: () {},
-                      child: TaskCard(title: "Mes autres absences",subtitle: "0J pris", bgColor: Color(0xFF8E44AD), progressColor: Colors.white),
+                      child: TaskCard(
+  title: "Mes autres absences",
+  subtitle: currentUser != null ? "${currentUser!.autresAbsences}J pris" : "Chargement...",
+  bgColor: Color(0xFF8E44AD),
+  progressColor: Colors.white,
+),
                     ),
                   ],
                 ),

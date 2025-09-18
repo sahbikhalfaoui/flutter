@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
      debugShowCheckedModeBanner: false,
        home: const SplashScreen(), // Start here
       routes: {
-        '/login': (context) => const LoginPage(),
+        '/login': (context) =>  LoginPage(),
         '/homepage': (context) => const HomePage(),
         '/profile': (context) => ProfilePage(),
         '/folder': (context) => const Folderpage(),

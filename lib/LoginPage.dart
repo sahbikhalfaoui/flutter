@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'HomePage.dart';
-
+import 'services/api_service.dart';
+import 'models/user.dart';
 class LoginPage extends StatelessWidget {
-  const LoginPage({super.key});
-
+  
+ LoginPage({super.key});
+final TextEditingController _identifiantController = TextEditingController();
+final TextEditingController _motDePasseController = TextEditingController();
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -68,27 +71,21 @@ class LoginPage extends StatelessWidget {
               child: Text("Votre identifiant *"),
             ),
             const SizedBox(height: 5),
-            TextField(
-              decoration: InputDecoration(
-                border: OutlineInputBorder(),
-              ),
-            ),
+           TextField(
+  controller: _identifiantController,
+  decoration: InputDecoration(
+    border: OutlineInputBorder(),
+  ),
+),
 
-            const SizedBox(height: 20),
-
-            // Mot de passe
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text("Votre mot de passe *"),
-            ),
-            const SizedBox(height: 5),
-            TextField(
-              obscureText: true,
-              decoration: InputDecoration(
-                border: OutlineInputBorder(),
-                suffixIcon: Icon(Icons.visibility),
-              ),
-            ),
+TextField(
+  controller: _motDePasseController,
+  obscureText: true,
+  decoration: InputDecoration(
+    border: OutlineInputBorder(),
+    suffixIcon: Icon(Icons.visibility),
+  ),
+),
 
             const SizedBox(height: 10),
 
@@ -150,12 +147,30 @@ class LoginPage extends StatelessWidget {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: () {
-                  Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => HomePage()),
-                );
-                },
+                onPressed: () async {
+  try {
+    final response = await ApiService.login(
+      _identifiantController.text,
+      _motDePasseController.text,
+    );
+    
+    if (response['token'] != null) {
+      await ApiService.setToken(response['token']);
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => HomePage()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(response['message'] ?? 'Erreur de connexion')),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Erreur de connexion au serveur')),
+    );
+  }
+},
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey[300],
                   foregroundColor: Colors.black,
