@@ -10,6 +10,7 @@ const Color secondaryPurple = Color(0xFF9B59B6);
 const Color lightGrey = Color(0xFFE0E0E0);
 const Color darkGrey = Color(0xFF757575);
 const Color actionColor = Colors.blueAccent;
+const Color purpleCent = Color(0xFF8E44AD);
 
 class QuestionsRHPage extends StatefulWidget {
   const QuestionsRHPage({super.key});
@@ -27,6 +28,7 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
   TextEditingController _descriptionController = TextEditingController();
   File? _pieceJointe;
   bool _informerBeneficiaire = false;
+  bool _isLoading = false;
 
   final List<String> _categories = ['Attestations', 'Congés', 'Données administratives', 'Données contractuelles','Données personnelles','Maladie','Autre'];
   final Map<String, List<String>> _sousCategories = {
@@ -39,9 +41,45 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
     'Autre':['Autre']
   };
 
-  // State for "En cours" questions
-  final List<_QuestionItem> _brouillonQuestions = [];
-  final List<_QuestionItem> _enCoursValidationQuestions = [];
+  // Lists to store questions from backend
+  List<Map<String, dynamic>> _questions = [];
+  List<Map<String, dynamic>> _brouillonQuestions = [];
+  List<Map<String, dynamic>> _enCoursValidationQuestions = [];
+  List<Map<String, dynamic>> _historiqueQuestions = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQuestions();
+  }
+
+  Future<void> _loadQuestions() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      final questions = await ApiService.getQuestions();
+      setState(() {
+        _questions = List<Map<String, dynamic>>.from(questions);
+        _filterQuestionsByStatus();
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors du chargement des questions: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _filterQuestionsByStatus() {
+    _brouillonQuestions = _questions.where((q) => q['statut'] == 'brouillon').toList();
+    _enCoursValidationQuestions = _questions.where((q) => q['statut'] == 'en_cours_validation').toList();
+    _historiqueQuestions = _questions.where((q) => q['statut'] == 'repondu').toList();
+  }
 
   Future<void> _pickFile() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles();
@@ -55,69 +93,85 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
     }
   }
 
- void _sauvegarderQuestion({String? editingId}) {
+  Future<void> _sauvegarderQuestion({String? editingId}) async {
     if (_formKey.currentState!.validate()) {
-      final now = DateTime.now();
-      final formattedDate = DateFormat('dd/MM/yyyy').format(now);
-      final String title = _titreController.text.isNotEmpty
-          ? _titreController.text
-          : 'Brouillon (${_brouillonQuestions.length + (editingId == null ? 1 : 0)})';
-      final updatedQuestion = _QuestionItem(
-        id: editingId ?? UniqueKey().toString().substring(0, 5),
-        beneficiaire: _beneficiaireController.text,
-        categorie: _selectedCategorie,
-        sousCategorie: _selectedSousCategorie,
-        titre: title,
-        description: _descriptionController.text,
-        pieceJointe: _pieceJointe,
-        informerBeneficiaire: _informerBeneficiaire,
-        dateDemande: editingId != null ? _brouillonQuestions.firstWhere((q) => q.id == editingId).dateDemande : formattedDate, // Keep original date if editing
-        statut: 'Brouillon',
-      );
+      try {
+        setState(() {
+          _isLoading = true;
+        });
 
-      setState(() {
+        Map<String, dynamic> questionData = {
+          'beneficiaire': _beneficiaireController.text,
+          'categorie': _selectedCategorie,
+          'sousCategorie': _selectedSousCategorie,
+          'titre': _titreController.text.isNotEmpty ? _titreController.text : 'Brouillon',
+          'description': _descriptionController.text,
+          'informerBeneficiaire': _informerBeneficiaire,
+          'statut': 'brouillon',
+        };
+
         if (editingId != null) {
-          final index = _brouillonQuestions.indexWhere((q) => q.id == editingId);
-          if (index != -1) {
-            _brouillonQuestions[index] = updatedQuestion;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Brouillon mis à jour.')),
-            );
-          }
+          // Update existing question
+          await ApiService.updateQuestion(editingId, questionData, _pieceJointe);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Brouillon mis à jour avec succès.')),
+          );
         } else {
-          _brouillonQuestions.add(updatedQuestion);
+          // Create new question
+          await ApiService.createQuestion(questionData, _pieceJointe);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Question sauvegardée en brouillon.')),
           );
         }
+
         _clearForm();
-      });
+        await _loadQuestions(); // Reload questions
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e')),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  void _envoyerQuestion() {
+  Future<void> _envoyerQuestion() async {
     if (_formKey.currentState!.validate()) {
-      final now = DateTime.now();
-      final formattedDate = DateFormat('dd/MM/yyyy').format(now);
-      final newQuestion = _QuestionItem(
-        id: UniqueKey().toString().substring(0, 5),
-        beneficiaire: _beneficiaireController.text, 
-        categorie: _selectedCategorie,
-        sousCategorie: _selectedSousCategorie,
-        titre: _titreController.text.isNotEmpty ? _titreController.text : 'En validation (${_enCoursValidationQuestions.length + 1})',
-        description: _descriptionController.text, 
-        pieceJointe: _pieceJointe,
-        informerBeneficiaire: _informerBeneficiaire, 
-        dateDemande: formattedDate,
-        statut: 'En cours de validation',
-      );
-      setState(() {
-        _enCoursValidationQuestions.add(newQuestion);
+      try {
+        setState(() {
+          _isLoading = true;
+        });
+
+        Map<String, dynamic> questionData = {
+          'beneficiaire': _beneficiaireController.text,
+          'categorie': _selectedCategorie,
+          'sousCategorie': _selectedSousCategorie,
+          'titre': _titreController.text.isNotEmpty ? _titreController.text : 'En validation',
+          'description': _descriptionController.text,
+          'informerBeneficiaire': _informerBeneficiaire,
+          'statut': 'en_cours_validation',
+        };
+
+        await ApiService.createQuestion(questionData, _pieceJointe);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Question envoyée pour validation.')),
+        );
+        
         _clearForm();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Question envoyée pour validation.')),
-      );
+        await _loadQuestions(); // Reload questions
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e')),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -139,72 +193,80 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
     _pieceJointe = null;
     _informerBeneficiaire = false;
   }
-   String? _editingQuestionId;
- void _editQuestion(_QuestionItem question) {
-    setState(() {
-      // Populate form fields with the question's data
-      _beneficiaireController.text = question.beneficiaire;
-      _selectedCategorie = question.categorie;
-      _selectedSousCategorie = question.sousCategorie;
-      _titreController.text = question.titre;
-      _descriptionController.text = question.description;
-      _pieceJointe = question.pieceJointe;
-      _informerBeneficiaire = question.informerBeneficiaire;
 
-      // Optionally, you might want to keep track of the question being edited
-      // to update it later in the _sauvegarderQuestion function.
-      // For example: _editingQuestionId = question.id;
+  void _editQuestion(Map<String, dynamic> question) {
+    setState(() {
+      _beneficiaireController.text = question['beneficiaire'] ?? '';
+      _selectedCategorie = question['categorie'];
+      _selectedSousCategorie = question['sousCategorie'];
+      _titreController.text = question['titre'] ?? '';
+      _descriptionController.text = question['description'] ?? '';
+      _informerBeneficiaire = question['informerBeneficiaire'] ?? false;
+      // Note: Can't restore file from server, user will need to re-upload if needed
+      _pieceJointe = null;
     });
   }
 
-  void _deleteBrouillonQuestion(_QuestionItem question) {
-    setState(() {
-      _brouillonQuestions.remove(question);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Brouillon "${question.titre}" supprimé.')),
-    );
-  }
-
-  void _cancelValidationQuestion(_QuestionItem question) {
-    setState(() {
-      _enCoursValidationQuestions.remove(question);
-      final now = DateTime.now();
-      final formattedDate = DateFormat('dd/MM/yyyy').format(now);
-      _brouillonQuestions.add(
-        _QuestionItem(
-          id: question.id,
-          beneficiaire: question.beneficiaire, 
-          categorie: question.categorie,
-          sousCategorie: question.sousCategorie,
-          titre: question.titre,
-          description: question.description, 
-          pieceJointe: question.pieceJointe,
-          informerBeneficiaire: question.informerBeneficiaire,
-          dateDemande: formattedDate,
-          statut: 'Brouillon',
-        ),
+  Future<void> _deleteBrouillonQuestion(Map<String, dynamic> question) async {
+    try {
+      await ApiService.deleteQuestion(question['_id']);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Question "${question['titre']}" supprimée.')),
       );
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Question "${question.titre}" retirée de la validation.')),
-    );
+      await _loadQuestions(); // Reload questions
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors de la suppression: $e')),
+      );
+    }
   }
 
-  void _viewQuestion(_QuestionItem question) {
+  Future<void> _cancelValidationQuestion(Map<String, dynamic> question) async {
+    try {
+      Map<String, dynamic> updateData = {
+        'beneficiaire': question['beneficiaire'],
+        'categorie': question['categorie'],
+        'sousCategorie': question['sousCategorie'],
+        'titre': question['titre'],
+        'description': question['description'],
+        'informerBeneficiaire': question['informerBeneficiaire'],
+        'statut': 'brouillon',
+      };
+      
+      await ApiService.updateQuestion(question['_id'], updateData, null);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Question "${question['titre']}" retirée de la validation.')),
+      );
+      await _loadQuestions(); // Reload questions
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e')),
+      );
+    }
+  }
+
+  void _viewQuestion(Map<String, dynamic> question) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text('Détails de la Question'),
+          title: const Text('Détails de la Question'),
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
-                Text('ID: ${question.id}'),
-                Text('Titre: ${question.titre}'),
-                Text('Date de la demande: ${question.dateDemande}'),
-                Text('Statut: ${question.statut}'),
-                // You would likely want to show more details here.
+                Text('ID: ${question['_id']}'),
+                Text('Titre: ${question['titre']}'),
+                Text('Bénéficiaire: ${question['beneficiaire']}'),
+                Text('Catégorie: ${question['categorie'] ?? ''}'),
+                Text('Sous-catégorie: ${question['sousCategorie'] ?? ''}'),
+                Text('Description: ${question['description']}'),
+                Text('Date de création: ${question['createdAt'] != null ? DateFormat('dd/MM/yyyy').format(DateTime.parse(question['createdAt'])) : ''}'),
+                Text('Statut: ${question['statut']}'),
+                if (question['reponse'] != null) ...[
+                  const SizedBox(height: 10),
+                  const Text('Réponse:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(question['reponse']),
+                ],
               ],
             ),
           ),
@@ -236,295 +298,300 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextFormField(
-                    controller: _beneficiaireController,
-                    decoration: const InputDecoration(
-                      labelText: 'Bénéficiaire *',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Ce champ est obligatoire.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  CheckboxListTile(
-                    title: const Text('Informer le bénéficiaire du suivi de la question RH, par mail'),
-                    value: _informerBeneficiaire,
-                    onChanged: (bool? value) {
-                      setState(() {
-                        _informerBeneficiaire = value!;
-                      });
-                    },
-                    controlAffinity: ListTileControlAffinity.leading,
-                    contentPadding: EdgeInsets.zero,
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Catégorie *',
-                            border: OutlineInputBorder(),
-                          ),
-                          value: _selectedCategorie,
-                          items: _categories.map((String value) {
-                            return DropdownMenuItem<String>(
-                              value: value,
-                              child: Text(value),
-                            );
-                          }).toList(),
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedCategorie = newValue;
-                              _selectedSousCategorie = null;
-                            });
-                          },
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Ce champ est obligatoire.';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            labelText: 'Sous-catégorie',
-                            border: OutlineInputBorder(),
-                          ),
-                          value: _selectedSousCategorie,
-                          items: _selectedCategorie != null && _sousCategories.containsKey(_selectedCategorie)
-                              ? _sousCategories[_selectedCategorie]!.map((String value) {
-                                  return DropdownMenuItem<String>(
-                                    value: value,
-                                    child: Text(value),
-                                  );
-                                }).toList()
-                              : <DropdownMenuItem<String>>[],
-                          onChanged: (String? newValue) {
-                            setState(() {
-                              _selectedSousCategorie = newValue;
-                            });
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _titreController,
-                    decoration: const InputDecoration(
-                      labelText: 'Titre *',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Ce champ est obligatoire.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _descriptionController,
-                    maxLines: 5,
-                    decoration: const InputDecoration(
-                      labelText: 'Description *',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Ce champ est obligatoire.';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      const Text('Pièce jointe'),
-                      const SizedBox(width: 8),
-                      IconButton(
-                        icon: const Icon(Icons.attach_file),
-                        onPressed: _pickFile,
-                      ),
-                      if (_pieceJointe != null)
-                        Expanded(child: Text(' ${_pieceJointe!.path.split('/').last}', overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      ElevatedButton(
-  onPressed: _supprimerQuestion,
-  style: ElevatedButton.styleFrom(
-    padding: EdgeInsets.zero, // Remove default padding
-    backgroundColor: Colors.transparent, // Make background transparent
-    shadowColor: Colors.transparent, // Remove shadow if needed
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    ),
-  ),
-  child: Ink(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          Color.fromARGB(255, 254, 102, 100),
-          Color(0xFFB71C1C),
-        ],
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-      ),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      alignment: Alignment.center,
-      child: const Text(
-        'Supprimer',
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
-          color: Colors.white,
-        ),
-      ),
-    ),
-  ),
-),
-
-                    ElevatedButton(
-  onPressed: _sauvegarderQuestion,
-  style: ElevatedButton.styleFrom(
-    padding: EdgeInsets.zero, // Remove default padding
-    backgroundColor: Colors.transparent, // Make background transparent
-    shadowColor: Colors.transparent, // Remove shadow if needed
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    ),
-  ),
-  child: Ink(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          Color.fromARGB(255, 240, 171, 51),
-          Color.fromARGB(255, 249, 200, 126),
-        ],
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-      ),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      alignment: Alignment.center,
-      child: const Text(
-        'Sauvegarder',
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
-          color: Colors.white,
-        ),
-      ),
-    ),
-  ),
-),
-
-                      ElevatedButton(
-  onPressed: _envoyerQuestion,
-  style: ElevatedButton.styleFrom(
-    padding: EdgeInsets.zero, // Remove default padding
-    backgroundColor: Colors.transparent, // Make background transparent
-    shadowColor: Colors.transparent, // Remove shadow if needed
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(8),
-    ),
-  ),
-  child: Ink(
-    decoration: BoxDecoration(
-      gradient: LinearGradient(
-        colors: [
-          Color.fromARGB(255, 16, 221, 88),
-          Color.fromARGB(255, 124, 217, 106),
-        ],
-        begin: Alignment.centerLeft,
-        end: Alignment.centerRight,
-      ),
-      borderRadius: BorderRadius.circular(8),
-    ),
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      alignment: Alignment.center,
-      child: const Text(
-        'Envoyer',
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          fontSize: 16,
-          color: Colors.white,
-        ),
-      ),
-    ),
-  ),
-)
-
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text('Les champs indiqués par une * sont obligatoires.', style: TextStyle(color: darkGrey)),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-            ExpansionTile(
-              title: const Text('En cours', style: TextStyle(fontWeight: FontWeight.bold)),
-              initiallyExpanded: true,
+      body: _isLoading 
+        ? const Center(child: CircularProgressIndicator())
+        : SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_brouillonQuestions.isNotEmpty)
-                  _buildEnCoursSection(
-                    title: 'Brouillon (${_brouillonQuestions.length})',
-                    questions: _brouillonQuestions,
-                    isBrouillon: true,
+                Form(
+                  key: _formKey,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: _beneficiaireController,
+                        decoration: const InputDecoration(
+                          labelText: 'Bénéficiaire *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Ce champ est obligatoire.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      CheckboxListTile(
+                        title: const Text('Informer le bénéficiaire du suivi de la question RH, par mail'),
+                        value: _informerBeneficiaire,
+                        onChanged: (bool? value) {
+                          setState(() {
+                            _informerBeneficiaire = value!;
+                          });
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: 'Catégorie *',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedCategorie,
+                              items: _categories.map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedCategorie = newValue;
+                                  _selectedSousCategorie = null;
+                                });
+                              },
+                              validator: (value) {
+                                if (value == null || value.isEmpty) {
+                                  return 'Ce champ est obligatoire.';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              decoration: const InputDecoration(
+                                labelText: 'Sous-catégorie',
+                                border: OutlineInputBorder(),
+                              ),
+                              value: _selectedSousCategorie,
+                              items: _selectedCategorie != null && _sousCategories.containsKey(_selectedCategorie)
+                                  ? _sousCategories[_selectedCategorie]!.map((String value) {
+                                      return DropdownMenuItem<String>(
+                                        value: value,
+                                        child: Text(value),
+                                      );
+                                    }).toList()
+                                  : <DropdownMenuItem<String>>[],
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  _selectedSousCategorie = newValue;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _titreController,
+                        decoration: const InputDecoration(
+                          labelText: 'Titre *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Ce champ est obligatoire.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _descriptionController,
+                        maxLines: 5,
+                        decoration: const InputDecoration(
+                          labelText: 'Description *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'Ce champ est obligatoire.';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          const Text('Pièce jointe'),
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.attach_file),
+                            onPressed: _pickFile,
+                          ),
+                          if (_pieceJointe != null)
+                            Expanded(child: Text(' ${_pieceJointe!.path.split('/').last}', overflow: TextOverflow.ellipsis)),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          ElevatedButton(
+                            onPressed: _supprimerQuestion,
+                            style: ElevatedButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color.fromARGB(255, 254, 102, 100),
+                                    Color(0xFFB71C1C),
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  'Supprimer',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: _isLoading ? null : _sauvegarderQuestion,
+                            style: ElevatedButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color.fromARGB(255, 240, 171, 51),
+                                    Color.fromARGB(255, 249, 200, 126),
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  'Sauvegarder',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          ElevatedButton(
+                            onPressed: _isLoading ? null : _envoyerQuestion,
+                            style: ElevatedButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Ink(
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [
+                                    Color.fromARGB(255, 16, 221, 88),
+                                    Color.fromARGB(255, 124, 217, 106),
+                                  ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                                alignment: Alignment.center,
+                                child: const Text(
+                                  'Envoyer',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text('Les champs indiqués par une * sont obligatoires.', style: TextStyle(color: darkGrey)),
+                    ],
                   ),
-                if (_enCoursValidationQuestions.isNotEmpty)
-                  _buildEnCoursSection(
-                    title: 'En cours de validation (${_enCoursValidationQuestions.length})',
-                    questions: _enCoursValidationQuestions,
-                    isBrouillon: false,
-                  ),
-              ].whereType<Widget>().toList(), // Filter out null if lists are empty
-            ),
-            const SizedBox(height: 20),
-            const ExpansionTile(
-              title: Text('Historique', style: TextStyle(fontWeight: FontWeight.bold)),
-              children: [
-                Padding(padding: EdgeInsets.all(16.0), child: Text('L\'historique sera affiché ici.')),
+                ),
+                const SizedBox(height: 20),
+                ExpansionTile(
+                  title: const Text('En cours', style: TextStyle(fontWeight: FontWeight.bold)),
+                  initiallyExpanded: true,
+                  children: [
+                    if (_brouillonQuestions.isNotEmpty)
+                      _buildEnCoursSection(
+                        title: 'Brouillon (${_brouillonQuestions.length})',
+                        questions: _brouillonQuestions,
+                        isBrouillon: true,
+                      ),
+                    if (_enCoursValidationQuestions.isNotEmpty)
+                      _buildEnCoursSection(
+                        title: 'En cours de validation (${_enCoursValidationQuestions.length})',
+                        questions: _enCoursValidationQuestions,
+                        isBrouillon: false,
+                      ),
+                  ].whereType<Widget>().toList(),
+                ),
+                const SizedBox(height: 20),
+                ExpansionTile(
+                  title: Text('Historique (${_historiqueQuestions.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  children: [
+                    if (_historiqueQuestions.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16.0),
+                        child: Text('Aucune question dans l\'historique.'),
+                      )
+                    else
+                      _buildHistoriqueSection(),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 
   Widget _buildEnCoursSection({
     required String title,
-    required List<_QuestionItem> questions,
+    required List<Map<String, dynamic>> questions,
     required bool isBrouillon,
   }) {
     return ExpansionTile(
@@ -537,99 +604,137 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
             child: Text('Aucune question dans $title.'),
           )
         else
-          DataTable(
-            columnSpacing: 16,
-            horizontalMargin: 16,
-            columns: const [
-              DataColumn(label: Text('N°')),
-              DataColumn(label: Expanded(child: Text('TITRE'))),
-              DataColumn(label: Expanded(child: Text('CATÉGORIE'))), 
-              DataColumn(label: Expanded(child: Text('SOUS-CATÉGORIE'))),
-              DataColumn(label: Text('DEMANDÉE LE')),
-              DataColumn(label: Text('STATUT')),
-              DataColumn(label: Text('ACTION')),
-            ],
-            rows: questions.map((question) {
-              return DataRow(cells: [
-                DataCell(Text(question.id)),
-                DataCell(
-                  Expanded(
-                  child : Text (
-                    question.titre,
-                    overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                    ),
-                     DataCell(
-                  Expanded(
-                    child: Text(
-                      question.categorie ?? '', // Handle potential null values
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                DataCell(
-                  Expanded(
-                    child: Text(
-                      question.sousCategorie ?? '', // Handle potential null values
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-                DataCell(Text(question.dateDemande)),
-                DataCell(Text(question.statut)),
-                DataCell(
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: purpleCent),
-                        onPressed: () => _editQuestion(question),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              columnSpacing: 16,
+              horizontalMargin: 16,
+              columns: const [
+                DataColumn(label: Text('N°')),
+                DataColumn(label: Text('TITRE')),
+                DataColumn(label: Text('CATÉGORIE')),
+                DataColumn(label: Text('SOUS-CATÉGORIE')),
+                DataColumn(label: Text('DEMANDÉE LE')),
+                DataColumn(label: Text('STATUT')),
+                DataColumn(label: Text('ACTION')),
+              ],
+              rows: questions.map((question) {
+                return DataRow(cells: [
+                  DataCell(Text(question['_id'].substring(0, 5))),
+                  DataCell(
+                    SizedBox(
+                      width: 150,
+                      child: Text(
+                        question['titre'] ?? '',
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      IconButton(
-                        icon: Icon(isBrouillon ? Icons.delete : Icons.search, color: purpleCent),
-                        onPressed: isBrouillon
-                            ? () => _deleteBrouillonQuestion(question)
-                            : () => _viewQuestion(question),
-                      ),
-                      if (!isBrouillon)
-                        IconButton(
-                          icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
-                          onPressed: () => _cancelValidationQuestion(question),
-                        ),
-                    ],
+                    ),
                   ),
-                ),
-              ]);
-            }).toList(),
+                  DataCell(
+                    SizedBox(
+                      width: 120,
+                      child: Text(
+                        question['categorie'] ?? '',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    SizedBox(
+                      width: 120,
+                      child: Text(
+                        question['sousCategorie'] ?? '',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                  DataCell(Text(question['createdAt'] != null 
+                    ? DateFormat('dd/MM/yyyy').format(DateTime.parse(question['createdAt'])) 
+                    : '')),
+                  DataCell(Text(question['statut'] ?? '')),
+                  DataCell(
+                    Row(
+                      children: [
+                        if (isBrouillon) ...[
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: purpleCent),
+                            onPressed: () => _editQuestion(question),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () => _deleteBrouillonQuestion(question),
+                          ),
+                        ] else ...[
+                          IconButton(
+                            icon: const Icon(Icons.search, color: purpleCent),
+                            onPressed: () => _viewQuestion(question),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+                            onPressed: () => _cancelValidationQuestion(question),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ]);
+              }).toList(),
+            ),
           ),
       ],
     );
   }
 
- 
-}
-class _QuestionItem {
-  final String id;
-  String beneficiaire;
-  String? categorie;
-  String? sousCategorie;
-  String titre;
-  String description;
-  File? pieceJointe; // Store the File object
-  bool informerBeneficiaire;
-  final String dateDemande;
-  String statut;
-
-  _QuestionItem({
-    required this.id,
-    required this.beneficiaire,
-    this.categorie,
-    this.sousCategorie,
-    required this.titre,
-    required this.description,
-    this.pieceJointe,
-    required this.informerBeneficiaire,
-    required this.dateDemande,
-    required this.statut,
-  });
+  Widget _buildHistoriqueSection() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columnSpacing: 16,
+        horizontalMargin: 16,
+        columns: const [
+          DataColumn(label: Text('N°')),
+          DataColumn(label: Text('TITRE')),
+          DataColumn(label: Text('CATÉGORIE')),
+          DataColumn(label: Text('DEMANDÉE LE')),
+          DataColumn(label: Text('RÉPONDUE LE')),
+          DataColumn(label: Text('ACTION')),
+        ],
+        rows: _historiqueQuestions.map((question) {
+          return DataRow(cells: [
+            DataCell(Text(question['_id'].substring(0, 5))),
+            DataCell(
+              SizedBox(
+                width: 150,
+                child: Text(
+                  question['titre'] ?? '',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            DataCell(
+              SizedBox(
+                width: 120,
+                child: Text(
+                  question['categorie'] ?? '',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            DataCell(Text(question['createdAt'] != null 
+              ? DateFormat('dd/MM/yyyy').format(DateTime.parse(question['createdAt'])) 
+              : '')),
+            DataCell(Text(question['dateReponse'] != null 
+              ? DateFormat('dd/MM/yyyy').format(DateTime.parse(question['dateReponse'])) 
+              : '')),
+            DataCell(
+              IconButton(
+                icon: const Icon(Icons.search, color: purpleCent),
+                onPressed: () => _viewQuestion(question),
+              ),
+            ),
+          ]);
+        }).toList(),
+      ),
+    );
+  }
 }

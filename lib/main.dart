@@ -34,7 +34,7 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => ProfilePage(),
          '/admin': (context) => const AdminPage(),
         '/folder': (context) => const Folderpage(),
-        '/calendar': (context) => const Calendarpage(),
+        '/calendar': (context) => const CalendarPage(),
       },
     );
   }
