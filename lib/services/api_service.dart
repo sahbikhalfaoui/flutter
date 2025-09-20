@@ -1,3 +1,4 @@
+// lib/services/api_service.dart (Updated)
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -77,6 +78,21 @@ class ApiService {
     );
     return json.decode(response.body);
   }
+
+  // New method to get HR users
+  static Future<List<dynamic>> getHRUsers() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/questions-rh/hr-users'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Failed to load HR users');
+    }
+  }
   
   static Future<Map<String, dynamic>> createQuestion(Map<String, dynamic> questionData, File? file) async {
     final token = await getToken();
@@ -135,13 +151,59 @@ class ApiService {
   static Future<Map<String, dynamic>> getDashboardStats() async {
     final token = await getToken();
     final response = await http.get(
-      Uri.parse('$baseUrl/dashboard-stats'),
+      Uri.parse('$baseUrl/dashboard/stats'),
       headers: {'Authorization': 'Bearer $token'},
     );
     return json.decode(response.body);
   }
 
-  // New methods for Admin functionality
+  // Notification methods
+  static Future<Map<String, dynamic>> getNotifications({int page = 1, int limit = 20, bool unreadOnly = false}) async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/notifications?page=$page&limit=$limit&unreadOnly=$unreadOnly'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> markNotificationAsRead(String notificationId) async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$baseUrl/notifications/$notificationId/read'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> markAllNotificationsAsRead() async {
+    final token = await getToken();
+    final response = await http.put(
+      Uri.parse('$baseUrl/notifications/read-all'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> deleteNotification(String notificationId) async {
+    final token = await getToken();
+    final response = await http.delete(
+      Uri.parse('$baseUrl/notifications/$notificationId'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  static Future<Map<String, dynamic>> getUnreadCount() async {
+    final token = await getToken();
+    final response = await http.get(
+      Uri.parse('$baseUrl/notifications/unread-count'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    return json.decode(response.body);
+  }
+
+  // Admin methods (existing)
   static Future<List<dynamic>> getUsers() async {
     final token = await getToken();
     final response = await http.get(

@@ -1,8 +1,16 @@
+// backend/routes/conges.js (Updated)
 const express = require('express');
 const Conge = require('../models/Conge');
 const User = require('../models/User');
 const { auth, checkRole } = require('../middleware/auth');
 const upload = require('../config/multer');
+const { sendEmail, emailTemplates } = require('../services/emailService');
+const { 
+  sendNotificationToRole, 
+  sendNotificationToUser,
+  createCongeRequestNotification,
+  createCongeStatusNotification 
+} = require('../services/notificationService');
 
 const router = express.Router();
 
@@ -11,6 +19,7 @@ router.post('/', auth, upload.single('fichier'), async (req, res) => {
   try {
     const { typeConge, dates, justification } = req.body;
     const parsedDates = JSON.parse(dates);
+    
     const conge = new Conge({
       userId: req.user._id,
       typeConge,
@@ -18,9 +27,27 @@ router.post('/', auth, upload.single('fichier'), async (req, res) => {
       justification,
       fichierJoint: req.file ? req.file.path : undefined
     });
+    
     await conge.save();
+
+    // Send notifications based on leave type
+    const isExceptional = ['exceptionnel', 'civisme', 'divers', 'famille', 'maladie', 'sans solde']
+      .some(type => typeConge.toLowerCase().includes(type));
+
+    const notification = createCongeRequestNotification(conge, req.user.nom);
+
+    if (isExceptional) {
+      // Exceptional leaves go only to HR
+      await sendNotificationToRole('hr', notification);
+    } else {
+      // Normal leaves go to both HR and managers
+      await sendNotificationToRole('hr', notification);
+      await sendNotificationToRole('manager', notification);
+    }
+
     res.status(201).json({ message: 'Demande de congé créée avec succès', conge });
   } catch (error) {
+    console.error('Create conge error:', error);
     res.status(500).json({ message: 'Erreur serveur' });
   }
 });
@@ -51,7 +78,7 @@ router.get('/', auth, async (req, res) => {
 router.put('/:id/status', auth, checkRole(['hr', 'manager']), async (req, res) => {
   try {
     const { statut } = req.body;
-    const conge = await Conge.findById(req.params.id);
+    const conge = await Conge.findById(req.params.id).populate('userId', 'nom email');
     
     if (!conge) {
       return res.status(404).json({ message: 'Demande non trouvée' });
@@ -72,8 +99,9 @@ router.put('/:id/status', auth, checkRole(['hr', 'manager']), async (req, res) =
       dateReponse: new Date()
     });
 
+    // Update user's leave balance
     if (statut === 'approuve') {
-      const user = await User.findById(conge.userId);
+      const user = await User.findById(conge.userId._id);
       if (conge.typeConge === 'RTT' || conge.typeConge === 'CPP') {
         user.soldeConges -= conge.dates.length;
       } else {
@@ -82,8 +110,52 @@ router.put('/:id/status', auth, checkRole(['hr', 'manager']), async (req, res) =
       await user.save();
     }
 
+    // Send notification to employee
+    const notification = createCongeStatusNotification(conge, statut, req.user.nom);
+    await sendNotificationToUser(conge.userId._id, notification);
+
+    // Send email notification
+    try {
+      const emailContent = emailTemplates.congeStatusUpdate(
+        conge.userId.nom,
+        conge.typeConge,
+        statut,
+        req.user.nom
+      );
+      await sendEmail(
+        conge.userId.email,
+        'Mise à jour de votre demande de congé',
+        emailContent
+      );
+    } catch (emailError) {
+      console.error('Error sending email:', emailError);
+    }
+
+    // If manager approved/rejected an exceptional leave, notify HR
+    if (req.user.role === 'manager') {
+      const isExceptional = ['exceptionnel', 'civisme', 'divers', 'famille', 'maladie', 'sans solde']
+        .some(type => conge.typeConge.toLowerCase().includes(type));
+      
+      if (isExceptional) {
+        const hrNotification = {
+          title: `Congé exceptionnel ${statut === 'approuve' ? 'approuvé' : 'refusé'} par un manager`,
+          message: `${req.user.nom} a ${statut === 'approuve' ? 'approuvé' : 'refusé'} le congé ${conge.typeConge} de ${conge.userId.nom}`,
+          type: 'conge_status_update',
+          data: {
+            congeId: conge._id,
+            status: statut,
+            managerName: req.user.nom,
+            employeeName: conge.userId.nom,
+            typeConge: conge.typeConge,
+          },
+        };
+        await sendNotificationToRole('hr', hrNotification);
+      }
+    }
+
     res.json({ message: 'Statut mis à jour avec succès' });
   } catch (error) {
+    console.error('Update conge status error:', error);
     res.status(500).json({ message: 'Erreur serveur' });
   }
 });

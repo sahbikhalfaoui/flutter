@@ -1,3 +1,4 @@
+// lib/HomePage.dart (Updated with notifications)
 import 'package:flutter/material.dart';
 import 'CalendarPage.dart'; 
 import 'TaskGroup/CongePage.dart';
@@ -6,7 +7,9 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_nav_bar/google_nav_bar.dart';
 import 'ProfilePage.dart';
 import 'services/api_service.dart';
+import 'services/notification_service.dart';
 import 'models/user.dart';
+import 'NotificationsPage.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -16,9 +19,11 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
- User? currentUser;
+  User? currentUser;
   final TextEditingController _searchController = TextEditingController();
-  int _selectedIndex = 0; // Track the currently selected index for the bottom nav
+  int _selectedIndex = 0;
+  int _unreadNotificationsCount = 0;
+  
   List<TaskGroup> allTaskGroups = [
     TaskGroup(
         title: "Mes congés",
@@ -40,33 +45,66 @@ class _HomePageState extends State<HomePage> {
     TaskGroup(title: "Mon changement de situation familliale",  progress: 0.87, bgColor: const Color.fromARGB(255, 255, 253, 250) ,imagePath: "lib/assets/images.jpg" ),
     TaskGroup(title: "Mon changement de composition familliale",  progress: 0.87, bgColor: const Color.fromARGB(255, 255, 253, 250) ,imagePath: "lib/assets/images.jpg" ),
     TaskGroup(title: "Ma demande d'acompte",  progress: 0.87, bgColor: const Color.fromARGB(255, 255, 253, 250) ,imagePath: "lib/assets/images.jpg" ),
-    
   ];
   List<TaskGroup> filteredTaskGroups = [];
 
   @override
-void initState() {
-  super.initState();
-  filteredTaskGroups = allTaskGroups;
-  _loadUserProfile();
-}
-
-void _loadUserProfile() async {
-  try {
-    final response = await ApiService.getProfile();
-    setState(() {
-      currentUser = User.fromJson(response);
-    });
-  } catch (e) {
-    print('Error loading profile: $e');
+  void initState() {
+    super.initState();
+    filteredTaskGroups = allTaskGroups;
+    _loadUserProfile();
+    _initializeNotifications();
   }
-}
+
+  void _loadUserProfile() async {
+    try {
+      final response = await ApiService.getProfile();
+      setState(() {
+        currentUser = User.fromJson(response);
+      });
+    } catch (e) {
+      print('Error loading profile: $e');
+    }
+  }
+
+  void _initializeNotifications() async {
+    await NotificationService.instance.initialize();
+    await NotificationService.instance.connectWebSocket();
+    
+    // Listen to unread count changes
+    NotificationService.instance.addUnreadCountListener((count) {
+      if (mounted) {
+        setState(() {
+          _unreadNotificationsCount = count;
+        });
+      }
+    });
+    
+    // Load initial unread count
+    setState(() {
+      _unreadNotificationsCount = NotificationService.instance.unreadCount;
+    });
+  }
+
+  @override
+  void dispose() {
+    NotificationService.instance.disconnectWebSocket();
+    super.dispose();
+  }
+
   void _filterTasks(String query) {
     setState(() {
       filteredTaskGroups = allTaskGroups.where((taskGroup) =>
         taskGroup.title.toLowerCase().contains(query.toLowerCase())
       ).toList();
     });
+  }
+
+  void _navigateToNotifications() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const NotificationsPage()),
+    );
   }
 
   @override
@@ -77,10 +115,39 @@ void _loadUserProfile() async {
         elevation: 0,
         title: const Text("Welcome Back !", style: TextStyle(color: Colors.black)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications, color: Colors.black),
-            onPressed: () {},
-          )
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications, color: Colors.black),
+                onPressed: _navigateToNotifications,
+              ),
+              if (_unreadNotificationsCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '$_unreadNotificationsCount',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
       body: Padding(
@@ -97,29 +164,26 @@ void _loadUserProfile() async {
                 child: Row(
                   children: [
                     GestureDetector(
-                   onTap: () {},
-                   child: TaskCard(
-  title: "Mon solde de congés",
-  subtitle: currentUser != null ? "${currentUser!.soldeConges}J/25J" : "Chargement...",
-  bgGradient: LinearGradient(
-    colors: [Color(0xFF8E44AD), Color.fromARGB(255, 191, 97, 228)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  ),
-  progressColor: Colors.white,
-),
-
-                   ),
-                  
-
+                      onTap: () {},
+                      child: TaskCard(
+                        title: "Mon solde de congés",
+                        subtitle: currentUser != null ? "${currentUser!.soldeConges}J/25J" : "Chargement...",
+                        bgGradient: LinearGradient(
+                          colors: [Color(0xFF8E44AD), Color.fromARGB(255, 191, 97, 228)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        progressColor: Colors.white,
+                      ),
+                    ),
                     GestureDetector(
                       onTap: () {},
                       child: TaskCard(
-  title: "Mes autres absences",
-  subtitle: currentUser != null ? "${currentUser!.autresAbsences}J pris" : "Chargement...",
-  bgColor: Color(0xFF8E44AD),
-  progressColor: Colors.white,
-),
+                        title: "Mes autres absences",
+                        subtitle: currentUser != null ? "${currentUser!.autresAbsences}J pris" : "Chargement...",
+                        bgColor: Color(0xFF8E44AD),
+                        progressColor: Colors.white,
+                      ),
                     ),
                   ],
                 ),
@@ -145,23 +209,21 @@ void _loadUserProfile() async {
               child: ListView.builder(
                 itemCount: filteredTaskGroups.length,
                 itemBuilder: (context, index) {
-                  final task =filteredTaskGroups[index];
+                  final task = filteredTaskGroups[index];
 
-                 return TaskGroup(
-                  title: task.title, 
-                  progress: task.progress, 
-                  bgColor: task.bgColor, 
-                  imagePath: task.imagePath,
-                  onTap: () {
-if (task.title == "Mes congés") {
-        Navigator.push(context, MaterialPageRoute(builder: (_) =>  CongesPage()));
-       }
-         else if (task.title == "Mes questions RH") {
-         Navigator.push(context, MaterialPageRoute(builder: (_) => QuestionsRHPage()));
-        }  //else if (task.title == "Le planning de mes collégues") {
-      //   Navigator.push(context, MaterialPageRoute(builder: (_) => const PlanningColleguesPage()));
-      // } 
-                  },
+                  return TaskGroup(
+                    title: task.title, 
+                    progress: task.progress, 
+                    bgColor: task.bgColor, 
+                    imagePath: task.imagePath,
+                    onTap: () {
+                      if (task.title == "Mes congés") {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => CongesPage()));
+                      }
+                      else if (task.title == "Mes questions RH") {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => QuestionsRHPage()));
+                      }
+                    },
                   );
                 },
               ),
@@ -176,17 +238,17 @@ if (task.title == "Mes congés") {
             activeColor: Color(0xFF8E44AD),
             tabBackgroundColor: const Color.fromARGB(255, 240, 234, 255),
             gap: 8,
-            selectedIndex: _selectedIndex, // Pass the current index here
+            selectedIndex: _selectedIndex,
             onTabChange: (index) {
               setState(() {
-                _selectedIndex = index; // Update the index when a tab is selected
+                _selectedIndex = index;
               });
 
-              if (index == 1) { // If Calendar tab is selected, navigate to CalendarPage
+              if (index == 1) {
                 Navigator.pushNamed(context, '/calendar');
-              } else if (index == 2) { // If Folder tab is selected, navigate to FolderPage
+              } else if (index == 2) {
                 Navigator.pushNamed(context, '/folder');
-              } else if (index == 3) { // If Profile tab is selected, navigate to ProfilePage
+              } else if (index == 3) {
                 Navigator.pushNamed(context, '/profile');
               }
             },
@@ -219,6 +281,7 @@ if (task.title == "Mes congés") {
   }
 }
 
+// TaskCard and TaskGroup classes remain the same
 class TaskCard extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -243,6 +306,7 @@ class TaskCard extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bgColor,
+        gradient: bgGradient,
         borderRadius: BorderRadius.circular(15),
         boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
       ),
@@ -286,7 +350,7 @@ class TaskGroup extends StatelessWidget {
             child: Image.asset(imagePath,width: 40,height: 40,),
           ),
           const SizedBox(width: 20),
-          Expanded( // Ensures text doesn't overflow
+          Expanded(
             child: Text(
               title,
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
