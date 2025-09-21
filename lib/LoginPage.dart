@@ -212,27 +212,7 @@ TextField(
             const SizedBox(height: 20),
 
             // Demo credentials info
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.withOpacity(0.3)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Comptes de démonstration:",
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text("👨‍💼 HR Admin: admin / admin123"),
-                  const Text("👨‍💻 Manager: manager1 / manager123"),
-                  const Text("👩‍💻 Employé: emp1 / emp123"),
-                ],
-              ),
-            ),
+           
           ],
         ),
       ),

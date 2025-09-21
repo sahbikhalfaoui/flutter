@@ -21,7 +21,8 @@ class QuestionsRHPage extends StatefulWidget {
 
 class _QuestionsRHPageState extends State<QuestionsRHPage> {
   final _formKey = GlobalKey<FormState>();
-  TextEditingController _beneficiaireController = TextEditingController();
+  String? _selectedBeneficiaireId;
+  String? _selectedBeneficiaireName;
   String? _selectedCategorie;
   String? _selectedSousCategorie;
   TextEditingController _titreController = TextEditingController();
@@ -30,6 +31,9 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
   bool _informerBeneficiaire = false;
   bool _isLoading = false;
 
+  // HR Users list
+  List<Map<String, dynamic>> _hrUsers = [];
+  
   final List<String> _categories = ['Attestations', 'Congés', 'Données administratives', 'Données contractuelles','Données personnelles','Maladie','Autre'];
   final Map<String, List<String>> _sousCategories = {
     'Attestations': ['Attestation', 'Autre'],
@@ -50,7 +54,29 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
   @override
   void initState() {
     super.initState();
+    _loadHRUsers();
     _loadQuestions();
+  }
+
+  Future<void> _loadHRUsers() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      final hrUsers = await ApiService.getHRUsers();
+      setState(() {
+        _hrUsers = List<Map<String, dynamic>>.from(hrUsers);
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur lors du chargement des utilisateurs RH: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
   }
 
   Future<void> _loadQuestions() async {
@@ -101,7 +127,7 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
         });
 
         Map<String, dynamic> questionData = {
-          'beneficiaire': _beneficiaireController.text,
+          'beneficiaireId': _selectedBeneficiaireId,
           'categorie': _selectedCategorie,
           'sousCategorie': _selectedSousCategorie,
           'titre': _titreController.text.isNotEmpty ? _titreController.text : 'Brouillon',
@@ -146,7 +172,7 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
         });
 
         Map<String, dynamic> questionData = {
-          'beneficiaire': _beneficiaireController.text,
+          'beneficiaireId': _selectedBeneficiaireId,
           'categorie': _selectedCategorie,
           'sousCategorie': _selectedSousCategorie,
           'titre': _titreController.text.isNotEmpty ? _titreController.text : 'En validation',
@@ -185,7 +211,8 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
   }
 
   void _clearForm() {
-    _beneficiaireController.clear();
+    _selectedBeneficiaireId = null;
+    _selectedBeneficiaireName = null;
     _selectedCategorie = null;
     _selectedSousCategorie = null;
     _titreController.clear();
@@ -196,7 +223,8 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
 
   void _editQuestion(Map<String, dynamic> question) {
     setState(() {
-      _beneficiaireController.text = question['beneficiaire'] ?? '';
+      _selectedBeneficiaireId = question['beneficiaireId'];
+      _selectedBeneficiaireName = question['beneficiaire'];
       _selectedCategorie = question['categorie'];
       _selectedSousCategorie = question['sousCategorie'];
       _titreController.text = question['titre'] ?? '';
@@ -224,7 +252,7 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
   Future<void> _cancelValidationQuestion(Map<String, dynamic> question) async {
     try {
       Map<String, dynamic> updateData = {
-        'beneficiaire': question['beneficiaire'],
+        'beneficiaireId': question['beneficiaireId'],
         'categorie': question['categorie'],
         'sousCategorie': question['sousCategorie'],
         'titre': question['titre'],
@@ -310,18 +338,39 @@ class _QuestionsRHPageState extends State<QuestionsRHPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: _beneficiaireController,
+                      // HR Beneficiary Dropdown
+                      DropdownButtonFormField<String>(
                         decoration: const InputDecoration(
                           labelText: 'Bénéficiaire *',
                           border: OutlineInputBorder(),
+                          hintText: 'Sélectionnez un utilisateur RH',
                         ),
+                        value: _selectedBeneficiaireId,
+                        items: _hrUsers.map((hrUser) {
+                          return DropdownMenuItem<String>(
+                            value: hrUser['_id'],
+                            child: Text(hrUser['nom'] ?? 'Nom non disponible'),
+                          );
+                        }).toList(),
+                        onChanged: (String? newValue) {
+                          setState(() {
+                            _selectedBeneficiaireId = newValue;
+                            // Find the selected HR user name
+                            final selectedUser = _hrUsers.firstWhere(
+                              (user) => user['_id'] == newValue,
+                              orElse: () => {'nom': ''},
+                            );
+                            _selectedBeneficiaireName = selectedUser['nom'];
+                          });
+                        },
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Ce champ est obligatoire.';
                           }
                           return null;
                         },
+                        isExpanded: true,
+                        menuMaxHeight: 200, // Limit dropdown height for scrolling
                       ),
                       const SizedBox(height: 16),
                       CheckboxListTile(

@@ -1,8 +1,8 @@
 // backend/services/emailService.js
 const nodemailer = require('nodemailer');
 
-// Create transporter using Gmail
-const transporter = nodemailer.createTransporter({
+// Create transporter using Gmail (FIXED: createTransport instead of createTransporter)
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER, // Your Gmail address
